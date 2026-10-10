@@ -1,0 +1,23 @@
+{
+  "run_id": "3bf124ef",
+  "task": "Write a haiku about a lighthouse keeper, then one sentence on what the light means.",
+  "kind": "fast",
+  "steps": [
+    "Write a haiku about a lighthouse keeper, then one sentence on what the light means."
+  ],
+  "stats": {
+    "seat": "groq",
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 1028.5,
+    "prompt_tokens": 82,
+    "completion_tokens": 37,
+    "cost_usd": 0.0
+  },
+  "failovers": [],
+  "verdict": {
+    "score": null,
+    "verifier_seat": "gemini",
+    "note": "verifier inconclusive; rubric pass=True"
+  },
+  "cost_usd": 0.0
+}

@@ -1,0 +1,29 @@
+● Checkpoint 01M4JBMESRM5N1J1G16DR8KE6C
+  session  relayzero-evidence-001
+  created  2026-10-10 07:32:31
+  author   ArcOmega <arc-agent-ops@proton.me>
+  tokens   0
+  commits  c0dd049 agent: commit run evidence — 4 runs incl. kill-test failover, transcripts for Entire checkpoints
+────────────────────────────────────────────────────────────
+## Intent
+
+Commit the agent run evidence (transcripts, summaries, answers) so the sessio...
+
+## Summary
+
+*Not generated yet. Run ‘entire checkpoint explain --generate 01M4JBMESRM5N1J1G16DR8KE6C‘ to create an AI summary.*
+
+## Files (9)
+
+- `.gitignore`
+- `evidence/runs/21a67a48/transcript.jsonl`
+- `evidence/runs/3bf124ef/answer.md`
+- `evidence/runs/3bf124ef/summary.json`
+- `evidence/runs/3bf124ef/transcript.jsonl`
+- `evidence/runs/9fb9b13e/transcript.jsonl`
+- `evidence/runs/d1d1c94a/answer.md`
+- `evidence/runs/d1d1c94a/summary.json`
+- `evidence/runs/d1d1c94a/transcript.jsonl`
+
+── Transcript (checkpoint scope) ───────────────────────────
+Commit the agent run evidence (transcripts, summaries, answers) so the session is captured as an Entire checkpoint

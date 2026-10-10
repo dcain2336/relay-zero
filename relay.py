@@ -18,6 +18,7 @@ import time
 import uuid
 
 import checkpoint
+import entire_wrap
 import seats
 import tracer
 
@@ -190,6 +191,13 @@ def run(task: str, kill_seat: str | None = None, multi: bool = False) -> dict:
     if kill_seat:
         os.environ["RELAYZERO_KILL_SEAT"] = kill_seat
 
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    run_dir = os.path.join(repo_dir, "evidence", "runs", run_id)
+    transcript_path = os.path.join(run_dir, "transcript.jsonl")
+    os.makedirs(run_dir, exist_ok=True)
+    entire_wrap.session_start(run_id, task, transcript_path, repo_dir)
+    entire_wrap.append_turn(transcript_path, "user", task)
+
     tracer.init()
     with tracer.Span("relay-zero-run", "WORKFLOW", {"task": task[:120], "multi": multi}):
         print(f"[relay-zero] run {run_id}")
@@ -231,6 +239,10 @@ def run(task: str, kill_seat: str | None = None, multi: bool = False) -> dict:
             last_stats = stats
             context_note += f"\n[step {i} result]\n{text[:1500]}\n"
             print(f"  step {i}/{len(steps)} done by {stats['seat']}")
+            entire_wrap.append_turn(
+                transcript_path, "assistant",
+                f"[step {i}/{len(steps)} via {stats['seat']}] {text[:1200]}"
+                + (f"\n[failovers: {len(failovers)}]" if failovers else ""))
 
         full_answer = step_outputs[-1] if len(step_outputs) == 1 else (
             "\n\n".join(f"### Step {i}\n{o}" for i, o in enumerate(step_outputs, 1)))
@@ -251,6 +263,22 @@ def run(task: str, kill_seat: str | None = None, multi: bool = False) -> dict:
             "verdict": verdict,
             "cost_usd": 0.0,
         }
+        # run evidence artifact: the agent commits its own work through git,
+        # Entire's hooks capture the session as a replayable checkpoint.
+        import json as _json
+        with open(os.path.join(run_dir, "summary.json"), "w") as fh:
+            _json.dump({k: v for k, v in result.items() if k != "answer"}, fh, indent=2)
+        with open(os.path.join(run_dir, "answer.md"), "w") as fh:
+            fh.write(f"# {task}\n\n{full_answer}\n")
+        entire_wrap.append_turn(
+            transcript_path, "assistant",
+            f"[delivered] verifier={verdict.get('score')} failovers={len(all_failovers)} cost=$0.00")
+        if os.environ.get("RELAYZERO_ENTIRE_COMMIT") == "1":
+            ok, out = entire_wrap.agent_commit(
+                repo_dir, f"agent: run {run_id} — {cls['kind']} task, "
+                          f"{len(all_failovers)} failover(s), verifier {verdict.get('score')}")
+            print(f"  entire commit: {'ok' if ok else 'FAILED'} — {out[:120]}")
+        entire_wrap.session_stop(run_id, transcript_path, repo_dir)
     tracer.flush()
     return result
 

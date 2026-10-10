@@ -1,0 +1,22 @@
+{
+  "run_id": "d1d1c94a",
+  "task": "Name three constellations visible in October skies, with one line each on how to find them.",
+  "kind": "standard",
+  "steps": [
+    "Name three constellations visible in October skies, with one line each on how to find them."
+  ],
+  "stats": {
+    "seat": "groq",
+    "model": "qwen/qwen3.8-27b",
+    "latency_ms": 1300.4,
+    "prompt_tokens": 83,
+    "completion_tokens": 108,
+    "cost_usd": 0.0
+  },
+  "failovers": [],
+  "verdict": {
+    "score": 2,
+    "verifier_seat": "groq"
+  },
+  "cost_usd": 0.0
+}
