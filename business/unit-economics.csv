@@ -1,0 +1,6 @@
+cost_category,monthly_usd,notes
+inference,0,free-tier model seats only; the agent treats seats as disposable
+hosting_runner,12,small runner instance for the agent loop
+logging_observability,0,neatlogs free tier (paid at scale ~50)
+domain,2,domain registration amortized
+pre_revenue_burn_total,50,indefinite runway on prize money alone

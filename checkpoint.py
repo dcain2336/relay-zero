@@ -1,7 +1,6 @@
 """Entire-style checkpoints: persist agent state before every model call so a
 failover restores instead of restarting. JSON snapshots under .checkpoints/<run_id>/.
 Also exposes entire_status() to verify the Entire CLI hooks are capturing."""
-"""
 
 from __future__ import annotations
 

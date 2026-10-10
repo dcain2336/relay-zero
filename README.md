@@ -38,18 +38,34 @@ RELAYZERO_KILL_SEAT=groq python3 relay.py "Write a haiku about failing over, the
 
 ## Free seats
 
-| Seat | Provider | Endpoint | Default free model |
-|------|----------|----------|--------------------|
-| groq | Groq | api.groq.com/openai/v1 | llama-3.3-70b-versatile |
-| mistral | Mistral AI | api.mistral.ai/v1 | mistral-small-latest |
-| nous | Nous Research | — | — |
-| nvidia | NVIDIA NIM | integrate.api.nvidia.com/v1 | meta/llama-3.3-70b-instruct |
-| openrouter | OpenRouter | openrouter.ai/api/v1 | meta-llama/llama-3.3-70b-instruct:free |
-| sambanova | SambaNova | api.sambanova.ai/v1 | Meta-Llama-3.3-70B-Instruct |
-| gemini | Google AI | generativelanguage.googleapis.com | gemini-2.0-flash |
+| Seat | Provider | Endpoint | Free model (verified 2026-10-10) |
+|------|----------|----------|----------------------------------|
+| groq | Groq | api.groq.com/openai/v1 | qwen/qwen3.8-27b |
+| openrouter | OpenRouter | openrouter.ai/api/v1 | nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free |
+| gemini | Google AI | generativelanguage.googleapis.com | gemini-flash-latest |
+| mistral | Mistral AI | api.mistral.ai/v1 | mistral-small-latest (rate-limited at bench time) |
+| nous | Nous Research | inference-api.nousresearch.com | needs account-level user tag (bench skips) |
+| nvidia | NVIDIA NIM | integrate.api.nvidia.com/v1 | key not provisioned for chat models (bench skips) |
 
-`bench()` probes every seat at startup — the agent only routes to seats that
-actually answer. Seats are disposable by design.
+Dropped: SambaNova — free tier gates inference behind a payment method (fails the
+no-billing rule). `bench()` probes every seat at startup — the agent only routes
+to seats that actually answer. Seats are disposable by design.
+
+## Kill test (verified 2026-10-10)
+
+Full run log: [evidence/kill-test-2026-10-10.txt](evidence/kill-test-2026-10-10.txt)
+
+```
+$ RELAYZERO_KILL_SEAT=groq python relay.py "Write a haiku about failing over…"
+  [!] groq failed (500); cooling down, failing over…
+  [✓] answered by gemini (7115.3 ms, cost $0.00)
+  verifier score: 10 (seat: openrouter)
+  failovers: 1 | cost: $0.00
+```
+
+The agent did not restart — it restored state from the pre-call checkpoint,
+failed over to the next live free seat, verified the answer with a second seat,
+and delivered.
 
 ## Sponsor evidence (WIP — building in public for #neatHack)
 

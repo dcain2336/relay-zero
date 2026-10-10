@@ -1,0 +1,3 @@
+scenario,customers_hobby,customers_pro,customers_team,mrr_usd,infra_and_inference_usd,gross_profit_usd,gross_margin_pct
+Base,70,25,5,1220,400,820,67
+Growth,150,80,20,4300,850,3450,80

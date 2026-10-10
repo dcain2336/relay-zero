@@ -1,0 +1,5 @@
+tier,price_usd_per_month,tasks_per_month,target_segment
+Hobby,0,100,developers and hackers
+Pro,29,5000,indie builders and small teams
+Team,99,25000,startups
+Enterprise,custom,unlimited,regulated and on-prem bench

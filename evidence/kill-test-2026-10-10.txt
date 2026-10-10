@@ -1,0 +1,35 @@
+$ RELAYZERO_KILL_SEAT=groq python relay.py "Write a haiku about failing over, then explain the poem in one sentence."
+[relay-zero] run 9f3c1a7b (run id varies per run)
+  classified: fast
+  probing bench…
+  [bench] groq: LIVE (kill-switch ARMED — will 500 mid-run)
+  [bench] mistral: dead — [mistral] 429: Rate limit exceeded
+  [bench] nous: dead — [nous] 400: missing tags
+  [bench] nvidia: dead — [nvidia] 404: Function not found for account
+  [bench] openrouter: LIVE (1717.5 ms, said 'OK')
+  [bench] gemini: LIVE (18621.9 ms, said 'OK')
+  live seats: ['groq', 'openrouter', 'gemini']
+  [!] groq failed (500); cooling down, failing over…
+  [✓] answered by gemini (7115.3 ms, cost $0.00)
+  verifier score: 10 (seat: openrouter)
+
+==== RESULT ====
+Main server goes dark,
+Standby rises to the call,
+No one feels the fall.
+
+**Explanation:** This poem describes the seamless transition of a backup system
+immediately taking over operations when a primary server crashes, ensuring
+users experience no disruption.
+
+answered by: gemini (gemini-flash-latest)
+failovers: 1 | cost: $0.00
+
+Recovery anatomy (what happened under the hood):
+1. plan: task classified "fast"; route order = groq → openrouter → gemini
+2. checkpoint saved before the groq call (.checkpoints/<run>/000-pre-call-groq.json)
+3. groq returned simulated HTTP 500 (RELAYZERO_KILL_SEAT) → seat cooled down 30s
+4. recover span: state restored from the pre-call checkpoint (no restart)
+5. failover to gemini → answered in 7.1s
+6. verify: openrouter (second seat) scored the answer 10/10
+7. total inference cost: $0.00

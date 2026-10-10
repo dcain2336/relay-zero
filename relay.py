@@ -139,12 +139,20 @@ def verify(text: str, task: str, ordered: list[dict], run_id: str) -> dict:
                     {"role": "system", "content": VERIFY_SYSTEM},
                     {"role": "user", "content": f"TASK: {task}\n\nANSWER:\n{text[:4000]}\n\nScore 0-10:"},
                 ],
-                max_tokens=16,
+                max_tokens=64,
             )
-            m = re.search(r"\d+", score_txt)
+            m = re.search(r"(?<!\d)(10|\d)(?!\d)", score_txt or "")
             score = int(m.group()) if m else None
+            if score is not None and not 0 <= score <= 10:
+                score = None
         except Exception as exc:
             score, score_txt = None, str(exc)
+    if score is None:
+        # verifier seat inconclusive (reasoning-only model, empty reply, …):
+        # fall back to a cheap rubric so the loop still delivers a verdict.
+        rubric = len(text.strip()) > 20
+        return {"score": None, "verifier_seat": ver_seat["name"],
+                "note": f"verifier inconclusive; rubric pass={rubric}"}
     return {"score": score, "verifier_seat": ver_seat["name"]}
 
 

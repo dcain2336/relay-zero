@@ -17,7 +17,7 @@ SEATS = [
         "provider": "Groq",
         "key_env": "GROQ_API_KEY",
         "url": "https://api.groq.com/openai/v1/chat/completions",
-        "model": "llama-3.3-70b-versatile",
+        "model": "qwen/qwen3.8-27b",
         "headers": lambda k: {"Authorization": f"Bearer {k}"},
     },
     {
@@ -32,8 +32,8 @@ SEATS = [
         "name": "nous",
         "provider": "Nous Research",
         "key_env": "NOUS_API_KEY",
-        "url": "https://api.nousresearch.com/v1/chat/completions",
-        "model": "DeepHermes-3-Llama-3-8B-Preview",
+        "url": "https://inference-api.nousresearch.com/v1/chat/completions",
+        "model": "stepfun/step-5-preview:free",
         "headers": lambda k: {"Authorization": f"Bearer {k}"},
     },
     {
@@ -41,7 +41,7 @@ SEATS = [
         "provider": "NVIDIA NIM",
         "key_env": "NVIDIA_API_KEY",
         "url": "https://integrate.api.nvidia.com/v1/chat/completions",
-        "model": "meta/llama-3.3-70b-instruct",
+        "model": "google/gemma-3-12b-it",
         "headers": lambda k: {"Authorization": f"Bearer {k}"},
     },
     {
@@ -49,20 +49,12 @@ SEATS = [
         "provider": "OpenRouter",
         "key_env": "OPENROUTER_API_KEY",
         "url": "https://openrouter.ai/api/v1/chat/completions",
-        "model": "meta-llama/llama-3.3-70b-instruct:free",
+        "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
         "headers": lambda k: {
             "Authorization": f"Bearer {k}",
             "HTTP-Referer": "https://github.com/dcain2336/relay-zero",
             "X-Title": "RelayZero-neatHack",
         },
-    },
-    {
-        "name": "sambanova",
-        "provider": "SambaNova",
-        "key_env": "SAMBANOVA_API_KEY",
-        "url": "https://api.sambanova.ai/v1/chat/completions",
-        "model": "Meta-Llama-3.3-70B-Instruct",
-        "headers": lambda k: {"Authorization": f"Bearer {k}"},
     },
 ]
 
@@ -71,7 +63,7 @@ GEMINI_SEAT = {
     "name": "gemini",
     "provider": "Google AI",
     "key_env": "GEMINI_API_KEY",
-    "model": "gemini-2.0-flash",
+    "model": "gemini-flash-latest",
 }
 
 
@@ -119,6 +111,11 @@ def call_seat(seat: dict, messages: list[dict], max_tokens: int = 1024) -> tuple
     if resp.status_code != 200:
         raise SeatError(name, resp.status_code, resp.text[:300])
     data = resp.json()
+    if isinstance(data, dict) and data.get("error"):
+        err = data["error"]
+        msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+        code = err.get("code", resp.status_code) if isinstance(err, dict) else resp.status_code
+        raise SeatError(name, code if isinstance(code, int) else resp.status_code, msg[:300])
     try:
         text = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
@@ -166,6 +163,8 @@ def _call_gemini(seat: dict, key: str, messages: list[dict], max_tokens: int):
         text = data["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError, TypeError):
         raise SeatError(name, resp.status_code, f"unexpected payload: {str(data)[:200]}")
+    if not (text or "").strip():
+        raise SeatError(name, resp.status_code, f"empty content: {str(data)[:200]}")
     stats = {
         "seat": name,
         "model": seat["model"],
@@ -187,12 +186,16 @@ def bench(verbose: bool = False) -> list[dict]:
     for seat in all_seats():
         name = seat["name"]
         if _killed(name):
+            # The kill-switch is a MID-RUN failure: the seat passes the bench
+            # probe so the router picks it, then call_seat raises a simulated
+            # 500 during the actual task — exercising the failover path.
             if verbose:
-                print(f"  [bench] {name}: KILLED (simulated)")
+                print(f"  [bench] {name}: LIVE (kill-switch ARMED — will 500 mid-run)")
+            live.append(seat)
             continue
         try:
             text, stats = call_seat(
-                seat, [{"role": "user", "content": PROBE_PROMPT}], max_tokens=8
+                seat, [{"role": "user", "content": PROBE_PROMPT}], max_tokens=64
             )
             if verbose:
                 print(f"  [bench] {name}: LIVE ({stats['latency_ms']} ms, said {text.strip()[:20]!r})")
