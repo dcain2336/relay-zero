@@ -1,0 +1,42 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Env / secrets — NEVER commit keys
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Checkpoints (local working state; restore-on-failover uses these at runtime)
+.checkpoints/
+local_traces/
+
+# Entire CLI bookkeeping (their branch is fine; keep local noise out)
+.entire/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+runs/
