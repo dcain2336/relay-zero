@@ -156,14 +156,42 @@ def verify(text: str, task: str, ordered: list[dict], run_id: str) -> dict:
     return {"score": score, "verifier_seat": ver_seat["name"]}
 
 
+# ------------------------------------------------------------------ planner
+def plan_steps(task: str, ordered: list[dict], run_id: str) -> list[str]:
+    """Ask a seat to decompose the task into <=3 concrete steps. Falls back
+    to a single step so planning can never break the run."""
+    import json as _json
+
+    with tracer.Span("plan", "PLAN", {}):
+        try:
+            text, _ = seats.call_seat(
+                ordered[0],
+                [
+                    {"role": "system", "content": SYSTEM},
+                    {"role": "user", "content":
+                     "Break this task into at most 3 short concrete steps. "
+                     "Reply with ONLY a JSON array of strings.\n\nTASK: " + task},
+                ],
+                max_tokens=256,
+            )
+            steps = _json.loads(text[text.index("["):text.rindex("]") + 1])
+            steps = [s for s in steps if isinstance(s, str) and s.strip()][:3]
+            if steps:
+                tracer.event("plan_decomposed", steps=len(steps))
+                return steps
+        except Exception as exc:
+            tracer.event("plan_fallback", error=str(exc)[:80])
+    return [task]
+
+
 # --------------------------------------------------------------------- run
-def run(task: str, kill_seat: str | None = None) -> dict:
+def run(task: str, kill_seat: str | None = None, multi: bool = False) -> dict:
     run_id = uuid.uuid4().hex[:8]
     if kill_seat:
         os.environ["RELAYZERO_KILL_SEAT"] = kill_seat
 
     tracer.init()
-    with tracer.Span("relay-zero-run", "WORKFLOW", {"task": task[:120]}):
+    with tracer.Span("relay-zero-run", "WORKFLOW", {"task": task[:120], "multi": multi}):
         print(f"[relay-zero] run {run_id}")
         cls = classify(task)
         print(f"  classified: {cls['kind']}")
@@ -175,24 +203,51 @@ def run(task: str, kill_seat: str | None = None) -> dict:
         checkpoint.save(run_id, "plan", {"task": task, "kind": cls["kind"],
                                          "order": [s["name"] for s in ordered]})
 
-        messages = [
-            {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": task},
-        ]
-        text, stats, failovers = execute_with_failover(run_id, messages, ordered)
+        steps = plan_steps(task, ordered, run_id) if multi else [task]
+        print(f"  steps ({len(steps)}):")
+        for i, s in enumerate(steps, 1):
+            print(f"    {i}. {s[:80]}")
 
-        verdict = verify(text, task, ordered, run_id)
+        step_outputs: list[str] = []
+        all_failovers: list[dict] = []
+        last_stats: dict = {}
+        context_note = ""
+        for i, step in enumerate(steps, 1):
+            if context_note:
+                messages = [
+                    {"role": "system", "content": SYSTEM},
+                    {"role": "user", "content":
+                     f"Context from earlier steps:\n{context_note}\n\nNow do step {i}/{len(steps)}: {step}"},
+                ]
+            else:
+                messages = [
+                    {"role": "system", "content": SYSTEM},
+                    {"role": "user", "content": f"Step {i}/{len(steps)} of the task — do exactly this: {step}"},
+                ]
+            checkpoint.save(run_id, f"step-{i}-start", {"step": step, "prior_outputs": len(step_outputs)})
+            text, stats, failovers = execute_with_failover(run_id, messages, ordered)
+            all_failovers.extend(failovers)
+            step_outputs.append(text)
+            last_stats = stats
+            context_note += f"\n[step {i} result]\n{text[:1500]}\n"
+            print(f"  step {i}/{len(steps)} done by {stats['seat']}")
+
+        full_answer = step_outputs[-1] if len(step_outputs) == 1 else (
+            "\n\n".join(f"### Step {i}\n{o}" for i, o in enumerate(step_outputs, 1)))
+
+        verdict = verify(full_answer, task, ordered, run_id)
         print(f"  verifier score: {verdict.get('score')} (seat: {verdict.get('verifier_seat')})")
 
-        checkpoint.save(run_id, "deliver", {"stats": stats, "failovers": failovers,
-                                            "verdict": verdict})
+        checkpoint.save(run_id, "deliver", {"stats": last_stats, "failovers": all_failovers,
+                                            "verdict": verdict, "steps": len(steps)})
         result = {
             "run_id": run_id,
             "task": task,
             "kind": cls["kind"],
-            "answer": text,
-            "stats": stats,
-            "failovers": failovers,
+            "steps": steps,
+            "answer": full_answer,
+            "stats": last_stats,
+            "failovers": all_failovers,
             "verdict": verdict,
             "cost_usd": 0.0,
         }
@@ -204,6 +259,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="RelayZero — the $0 agent that never goes down")
     ap.add_argument("task", help="the goal to complete end-to-end")
     ap.add_argument("--kill", default=None, help="simulate a dead seat (demo kill-switch)")
+    ap.add_argument("--multi", action="store_true",
+                    help="decompose the task into up to 3 steps and run each with failover")
     args = ap.parse_args()
 
     # .env support (dev convenience; file itself is gitignored)
@@ -216,7 +273,7 @@ def main() -> int:
                 os.environ.setdefault(k.strip(), v.strip())
 
     try:
-        result = run(args.task, kill_seat=args.kill)
+        result = run(args.task, kill_seat=args.kill, multi=args.multi)
     except Exception as exc:
         print(f"[relay-zero] FAILED: {exc}", file=sys.stderr)
         tracer.shutdown()
@@ -225,7 +282,7 @@ def main() -> int:
     print("\n==== RESULT ====")
     print(result["answer"])
     print(f"\nanswered by: {result['stats']['seat']} ({result['stats']['model']})")
-    print(f"failovers: {len(result['failovers'])} | cost: ${result['cost_usd']:.2f}")
+    print(f"steps: {len(result.get('steps', [1]))} | failovers: {len(result['failovers'])} | cost: ${result['cost_usd']:.2f}")
     tracer.shutdown()
     return 0
 
