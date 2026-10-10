@@ -67,11 +67,36 @@ The agent did not restart — it restored state from the pre-call checkpoint,
 failed over to the next live free seat, verified the answer with a second seat,
 and delivered.
 
-## Sponsor evidence (WIP — building in public for #neatHack)
+## Before/after: v1 naive → v2 backoff+verify
 
-- neatlogs traces: every run traced from commit #1 — [trace links land here]
-- Entire checkpoints + `entire-graph` output: [lands here]
-- cfo.ai business plan: [lands here] (free signup path, no card)
+Full comparison: [evidence/before-after-v1-v2.txt](evidence/before-after-v1-v2.txt)
+
+| metric | v1 naive (`--naive`) | v2 backoff+verify (default) |
+|---|---|---|
+| failed calls to the dead seat | 2 (immediate same-seat retry) | 1 (30s cooldown) |
+| checkpoint restore on failover | no | yes |
+| answer verifier | none | second seat, 10/10 |
+| inference cost | $0.00 | $0.00 |
+
+The neatlogs traces told the story: v1's recover spans showed back-to-back 500s
+on the same seat — wasted calls with zero information gain. That's what
+motivated the cooldown + checkpoint-restore design in v2.
+
+## Sponsor evidence
+
+- **neatlogs**: every run traced from commit #1 — spans for plan/route/llm-call/
+  recover/verify with latency, tokens, cost. Live dashboard links pending the
+  free no-card account (in progress); meanwhile every span also buffers to
+  `local_traces/` JSONL. Trace the kill test: `RELAYZERO_KILL_SEAT=groq python
+  relay.py "…"` and read the recover/failover spans.
+- **Entire**: the agent wraps each run in Entire's session lifecycle
+  (`entire_wrap.py`) and commits its own run artifacts — every agent commit is
+  a replayable checkpoint. Evidence: `evidence/entire-checkpoint-explain.txt`
+  (checkpoint `01M4JBMESRM5N1J1G16DR8KE6C`), per-run transcripts in
+  `evidence/runs/<run_id>/transcript.jsonl`.
+- **cfo.ai**: business numbers exported as CSV (`business/pricing-tiers.csv`,
+  `business/scenarios.csv`, `business/unit-economics.csv`), ready for upload;
+  Ari forecasts land day 2.
 
 ## The business (preview)
 

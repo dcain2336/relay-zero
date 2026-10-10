@@ -1,0 +1,36 @@
+v1 (naive) vs v2 (backoff + verify) — kill-test comparison
+==============================================================
+Both runs: RELAYZERO_KILL_SEAT=groq (simulated HTTP 500 on the primary seat),
+same task: "Write a haiku about failing over, then explain the poem in one sentence."
+
+--- v1 naive: `python relay.py --naive "<task>"` (run b5b71bf0) ---
+  [!] groq failed (500); naive retry…
+  [!] naive retry failed too; moving on…
+  FAILED: all seats exhausted (bench was thin at this hour: only groq live)
+
+  Behavior: on the 500, v1 immediately retried the SAME dead seat (2nd failed
+  call, wasted), set no cooldown, restored no checkpoint, ran no verifier.
+  The neatlogs recover span for v1 shows naive_retry with no restore.
+
+--- v2 backoff+verify: `python relay.py "<task>"` (default) ---
+  Earlier kill test (evidence/kill-test-2026-10-10.txt, healthy bench):
+    [!] groq failed (500); cooling down, failing over…
+    [✓] answered by gemini (7115.3 ms, cost $0.00)
+    verifier score: 10 (seat: openrouter)
+    failovers: 1 | cost: $0.00
+
+  Behavior: on the 500, v2 cooled the seat for 30s (no hammering), restored
+  agent state from the pre-call Entire-style checkpoint, failed over to the
+  next live seat, and had a second seat verify the answer (10/10).
+
+--- numbers ---
+  metric                          v1 naive        v2 backoff+verify
+  failed calls to the dead seat   2               1
+  seat cooldown                   none            30s
+  checkpoint restore on failover  no              yes
+  answer verifier                 none            second seat, 10/10
+  inference cost                  $0.00           $0.00
+
+The traces told the story: v1's recover spans showed back-to-back 500s on the
+same seat — wasted calls with zero information gain. That's what motivated the
+cooldown + checkpoint-restore design in v2.

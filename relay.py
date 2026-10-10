@@ -87,9 +87,12 @@ def execute_with_failover(
     ordered: list[dict],
     max_tokens: int = 1024,
     max_attempts: int | None = None,
+    naive: bool = False,
 ) -> tuple[str, dict, list[dict]]:
     """Call seats in order; on retryable failure cool the seat, checkpoint, and
-    fail over. Returns (text, stats, failover_log)."""
+    fail over. Returns (text, stats, failover_log).
+    naive=True reproduces the v1 baseline: no cooldowns, no checkpoint restore,
+    immediate same-seat retry (wastes calls on dead seats)."""
     max_attempts = max_attempts or len(ordered)
     failovers = []
     last_exc = None
@@ -109,13 +112,28 @@ def execute_with_failover(
                 text, stats = seats.call_seat(seat, messages, max_tokens=max_tokens)
             except seats.SeatError as exc:
                 retryable = exc.status in RETRYABLE or exc.status is None
-                if retryable:
+                if retryable and not naive:
                     _cooldowns[name] = time.time() + 30
                 failovers.append(
                     {"seat": name, "status": exc.status, "error": str(exc)[:120],
                      "retryable": retryable}
                 )
-                with tracer.Span("recover", "RECOVER", {"failed_seat": name, "status": exc.status}):
+                with tracer.Span("recover", "RECOVER", {"failed_seat": name, "status": exc.status,
+                                                        "naive": naive}):
+                    if naive:
+                        # v1: hammer the dead seat once more, no checkpoint restore
+                        tracer.event("naive_retry", seat=name)
+                        print(f"  [!] {name} failed ({exc.status}); naive retry…")
+                        try:
+                            text, stats = seats.call_seat(seat, messages, max_tokens=max_tokens)
+                            print(f"  [✓] answered by {name} on naive retry")
+                            return text, stats, failovers
+                        except seats.SeatError as exc2:
+                            failovers.append({"seat": name, "status": exc2.status,
+                                              "error": "naive retry also failed", "retryable": retryable})
+                            print(f"  [!] naive retry failed too; moving on…")
+                            last_exc = exc2
+                            continue
                     tracer.event("failover", failed_seat=name, restored_from=ckpt)
                 print(f"  [!] {name} failed ({exc.status}); cooling down, failing over…")
                 last_exc = exc
@@ -186,7 +204,8 @@ def plan_steps(task: str, ordered: list[dict], run_id: str) -> list[str]:
 
 
 # --------------------------------------------------------------------- run
-def run(task: str, kill_seat: str | None = None, multi: bool = False) -> dict:
+def run(task: str, kill_seat: str | None = None, multi: bool = False,
+        naive: bool = False) -> dict:
     run_id = uuid.uuid4().hex[:8]
     if kill_seat:
         os.environ["RELAYZERO_KILL_SEAT"] = kill_seat
@@ -199,7 +218,7 @@ def run(task: str, kill_seat: str | None = None, multi: bool = False) -> dict:
     entire_wrap.append_turn(transcript_path, "user", task)
 
     tracer.init()
-    with tracer.Span("relay-zero-run", "WORKFLOW", {"task": task[:120], "multi": multi}):
+    with tracer.Span("relay-zero-run", "WORKFLOW", {"task": task[:120], "multi": multi, "naive": naive}):
         print(f"[relay-zero] run {run_id}")
         cls = classify(task)
         print(f"  classified: {cls['kind']}")
@@ -233,7 +252,7 @@ def run(task: str, kill_seat: str | None = None, multi: bool = False) -> dict:
                     {"role": "user", "content": f"Step {i}/{len(steps)} of the task — do exactly this: {step}"},
                 ]
             checkpoint.save(run_id, f"step-{i}-start", {"step": step, "prior_outputs": len(step_outputs)})
-            text, stats, failovers = execute_with_failover(run_id, messages, ordered)
+            text, stats, failovers = execute_with_failover(run_id, messages, ordered, naive=naive)
             all_failovers.extend(failovers)
             step_outputs.append(text)
             last_stats = stats
@@ -247,7 +266,7 @@ def run(task: str, kill_seat: str | None = None, multi: bool = False) -> dict:
         full_answer = step_outputs[-1] if len(step_outputs) == 1 else (
             "\n\n".join(f"### Step {i}\n{o}" for i, o in enumerate(step_outputs, 1)))
 
-        verdict = verify(full_answer, task, ordered, run_id)
+        verdict = {"score": None, "note": "naive mode: no verifier"} if naive else verify(full_answer, task, ordered, run_id)
         print(f"  verifier score: {verdict.get('score')} (seat: {verdict.get('verifier_seat')})")
 
         checkpoint.save(run_id, "deliver", {"stats": last_stats, "failovers": all_failovers,
@@ -289,6 +308,8 @@ def main() -> int:
     ap.add_argument("--kill", default=None, help="simulate a dead seat (demo kill-switch)")
     ap.add_argument("--multi", action="store_true",
                     help="decompose the task into up to 3 steps and run each with failover")
+    ap.add_argument("--naive", action="store_true",
+                    help="v1 baseline: no cooldowns, no checkpoint restore, no verifier (for before/after comparison)")
     args = ap.parse_args()
 
     # .env support (dev convenience; file itself is gitignored)
@@ -301,7 +322,7 @@ def main() -> int:
                 os.environ.setdefault(k.strip(), v.strip())
 
     try:
-        result = run(args.task, kill_seat=args.kill, multi=args.multi)
+        result = run(args.task, kill_seat=args.kill, multi=args.multi, naive=args.naive)
     except Exception as exc:
         print(f"[relay-zero] FAILED: {exc}", file=sys.stderr)
         tracer.shutdown()
