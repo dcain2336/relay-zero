@@ -1,0 +1,30 @@
+{
+  "run_id": "093a4e49",
+  "task": "Write a haiku about failing over, then explain the poem",
+  "kind": "fast",
+  "steps": [
+    "Write a haiku about failing over, then explain the poem"
+  ],
+  "stats": {
+    "seat": "orcarouter-deepseek",
+    "model": "deepseek/deepseek-v4-flash-free",
+    "latency_ms": 4113.3,
+    "prompt_tokens": 141,
+    "completion_tokens": 161,
+    "cost_usd": 0.0
+  },
+  "failovers": [
+    {
+      "seat": "groq",
+      "status": 500,
+      "error": "[groq] 500: simulated kill (RELAYZERO_KILL_SEAT)",
+      "retryable": true
+    }
+  ],
+  "verdict": {
+    "score": null,
+    "verifier_seat": "orcarouter-glm",
+    "note": "verifier inconclusive; rubric pass=True"
+  },
+  "cost_usd": 0.0
+}

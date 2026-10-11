@@ -66,10 +66,14 @@ def route(kind: str, live: list[dict]) -> list[dict]:
     if not live:
         raise RuntimeError("no live seats on the bench")
     pref = {
-        "fast": ["groq", "sambanova", "gemini", "mistral", "openrouter", "nvidia", "nous"],
-        "code": ["mistral", "groq", "openrouter", "sambanova", "nvidia", "gemini", "nous"],
-        "research": ["openrouter", "groq", "mistral", "gemini", "sambanova", "nvidia", "nous"],
-        "standard": ["groq", "openrouter", "mistral", "gemini", "sambanova", "nvidia", "nous"],
+        "fast": ["groq", "orcarouter-deepseek", "orcarouter-hy3", "orcarouter-glm",
+                 "sambanova", "gemini", "mistral", "openrouter", "nvidia", "nous"],
+        "code": ["mistral", "groq", "orcarouter-deepseek", "orcarouter-hy3",
+                 "openrouter", "sambanova", "nvidia", "gemini", "nous", "orcarouter-glm"],
+        "research": ["openrouter", "groq", "orcarouter-deepseek", "orcarouter-hy3",
+                     "orcarouter-glm", "mistral", "gemini", "sambanova", "nvidia", "nous"],
+        "standard": ["groq", "orcarouter-deepseek", "orcarouter-hy3", "orcarouter-glm",
+                     "openrouter", "mistral", "gemini", "sambanova", "nvidia", "nous"],
     }[kind]
     ranked = sorted(
         [s for s in live if s["name"] in {x["name"] for x in live}],
@@ -146,51 +150,63 @@ def execute_with_failover(
 
 # ----------------------------------------------------------------- verifier
 def verify(text: str, task: str, ordered: list[dict], run_id: str) -> dict:
-    """Cheap verifier pass: a second seat scores the answer. Below bar -> note it."""
+    """Cheap verifier pass: a DIFFERENT seat scores the answer. The verifier
+    walks the seat list from the back (preferring a seat that didn't do the
+    primary work) and fails over through dead seats — the verdict must survive
+    a bench that just lost a seat. Below bar -> note it."""
     if os.environ.get("RELAYZERO_NO_VERIFY") == "1" or not text.strip():
         return {"score": None, "note": "skipped/empty"}
-    ver_seat = ordered[-1] if len(ordered) > 1 else ordered[0]
-    with tracer.Span("verify", "VERIFY", {"verifier_seat": ver_seat["name"]}):
-        try:
-            score_txt, _ = seats.call_seat(
-                ver_seat,
-                [
-                    {"role": "system", "content": VERIFY_SYSTEM},
-                    {"role": "user", "content": f"TASK: {task}\n\nANSWER:\n{text[:4000]}\n\nScore 0-10:"},
-                ],
-                max_tokens=64,
-            )
-            m = re.search(r"(?<!\d)(10|\d)(?!\d)", score_txt or "")
-            score = int(m.group()) if m else None
-            if score is not None and not 0 <= score <= 10:
-                score = None
-        except Exception as exc:
-            score, score_txt = None, str(exc)
-    if score is None:
-        # verifier seat inconclusive (reasoning-only model, empty reply, …):
-        # fall back to a cheap rubric so the loop still delivers a verdict.
-        rubric = len(text.strip()) > 20
-        return {"score": None, "verifier_seat": ver_seat["name"],
-                "note": f"verifier inconclusive; rubric pass={rubric}"}
-    return {"score": score, "verifier_seat": ver_seat["name"]}
+    for ver_seat in reversed(ordered):
+        with tracer.Span("verify", "VERIFY", {"verifier_seat": ver_seat["name"]}):
+            try:
+                score_txt, _ = seats.call_seat(
+                    ver_seat,
+                    [
+                        {"role": "system", "content": VERIFY_SYSTEM},
+                        {"role": "user", "content": f"TASK: {task}\n\nANSWER:\n{text[:4000]}\n\nScore 0-10:"},
+                    ],
+                    max_tokens=64,
+                )
+                m = re.search(r"(?<!\d)(10|\d)(?!\d)", score_txt or "")
+                score = int(m.group()) if m else None
+                if score is not None and not 0 <= score <= 10:
+                    score = None
+            except Exception as exc:
+                tracer.event("verifier_seat_failed", seat=ver_seat["name"],
+                             error=str(exc)[:80])
+                continue
+        if score is None:
+            # verifier seat inconclusive (reasoning-only model, empty reply, …):
+            # fall back to a cheap rubric so the loop still delivers a verdict.
+            rubric = len(text.strip()) > 20
+            return {"score": None, "verifier_seat": ver_seat["name"],
+                    "note": f"verifier inconclusive; rubric pass={rubric}"}
+        return {"score": score, "verifier_seat": ver_seat["name"]}
+    # every verifier seat is down: the answer stands, rubric notes it.
+    rubric = len(text.strip()) > 20
+    return {"score": None, "verifier_seat": None,
+            "note": f"all verifier seats down; rubric pass={rubric}"}
 
 
 # ------------------------------------------------------------------ planner
 def plan_steps(task: str, ordered: list[dict], run_id: str) -> list[str]:
-    """Ask a seat to decompose the task into <=3 concrete steps. Falls back
-    to a single step so planning can never break the run."""
+    """Ask a seat to decompose the task into <=3 concrete steps. Planning goes
+    through the same failover path as execution — the plan call must never be
+    a single point of failure. Falls back to a single step so planning can
+    never break the run."""
     import json as _json
 
     with tracer.Span("plan", "PLAN", {}):
         try:
-            text, _ = seats.call_seat(
-                ordered[0],
+            text, _ = execute_with_failover(
+                run_id,
                 [
                     {"role": "system", "content": SYSTEM},
                     {"role": "user", "content":
                      "Break this task into at most 3 short concrete steps. "
                      "Reply with ONLY a JSON array of strings.\n\nTASK: " + task},
                 ],
+                ordered,
                 max_tokens=256,
             )
             steps = _json.loads(text[text.index("["):text.rindex("]") + 1])

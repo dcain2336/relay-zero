@@ -56,6 +56,34 @@ SEATS = [
             "X-Title": "RelayZero-neatHack",
         },
     },
+    # OrcaRouter free tier (no card, small shared daily quota). OpenAI-compatible
+    # endpoint; the free lineup rotates, so bench() is the gatekeeper. Added
+    # 2026-10-11 when the Groq/OpenRouter/Gemini bench was flapping — bench
+    # depth is the product.
+    {
+        "name": "orcarouter-deepseek",
+        "provider": "OrcaRouter",
+        "key_env": "ORCAROUTER_API_KEY",
+        "url": "https://api.orcarouter.ai/v1/chat/completions",
+        "model": "deepseek/deepseek-v4-flash-free",
+        "headers": lambda k: {"Authorization": f"Bearer {k}"},
+    },
+    {
+        "name": "orcarouter-hy3",
+        "provider": "OrcaRouter",
+        "key_env": "ORCAROUTER_API_KEY",
+        "url": "https://api.orcarouter.ai/v1/chat/completions",
+        "model": "tencent/hy3-free",
+        "headers": lambda k: {"Authorization": f"Bearer {k}"},
+    },
+    {
+        "name": "orcarouter-glm",
+        "provider": "OrcaRouter",
+        "key_env": "ORCAROUTER_API_KEY",
+        "url": "https://api.orcarouter.ai/v1/chat/completions",
+        "model": "z-ai/glm-5.3-flash-free",
+        "headers": lambda k: {"Authorization": f"Bearer {k}"},
+    },
 ]
 
 # Gemini uses its own REST shape (v1beta generateContent, key as query param).

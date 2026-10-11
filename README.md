@@ -38,11 +38,14 @@ RELAYZERO_KILL_SEAT=groq python3 relay.py "Write a haiku about failing over, the
 
 ## Free seats
 
-| Seat | Provider | Endpoint | Free model (verified 2026-10-10) |
+| Seat | Provider | Endpoint | Free model (verified 2026-10-11) |
 |------|----------|----------|----------------------------------|
 | groq | Groq | api.groq.com/openai/v1 | qwen/qwen3.8-27b |
-| openrouter | OpenRouter | openrouter.ai/api/v1 | nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free |
-| gemini | Google AI | generativelanguage.googleapis.com | gemini-flash-latest |
+| orcarouter-deepseek | OrcaRouter | api.orcarouter.ai/v1 | deepseek/deepseek-v4-flash-free |
+| orcarouter-hy3 | OrcaRouter | api.orcarouter.ai/v1 | tencent/hy3-free |
+| orcarouter-glm | OrcaRouter | api.orcarouter.ai/v1 | z-ai/glm-5.3-flash-free |
+| openrouter | OpenRouter | openrouter.ai/api/v1 | nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free (flapping 10-11: free-pool saturation) |
+| gemini | Google AI | generativelanguage.googleapis.com | gemini-flash-latest (flapping 10-11: 503 demand spikes) |
 | mistral | Mistral AI | api.mistral.ai/v1 | mistral-small-latest (rate-limited at bench time) |
 | nous | Nous Research | inference-api.nousresearch.com | needs account-level user tag (bench skips) |
 | nvidia | NVIDIA NIM | integrate.api.nvidia.com/v1 | key not provisioned for chat models (bench skips) |
@@ -66,6 +69,27 @@ $ RELAYZERO_KILL_SEAT=groq python relay.py "Write a haiku about failing over…"
 The agent did not restart — it restored state from the pre-call checkpoint,
 failed over to the next live free seat, verified the answer with a second seat,
 and delivered.
+
+## Kill test, day 2 (verified 2026-10-11 — run `093a4e49`)
+
+Full run log: [evidence/kill-test-2026-10-11.txt](evidence/kill-test-2026-10-11.txt)
+
+```
+$ RELAYZERO_KILL_SEAT=groq python relay.py "Write a haiku about failing over…"
+  [bench] groq: LIVE (kill-switch ARMED — will 500 mid-run)
+  [bench] openrouter: dead — 502 (free pool saturated)
+  [bench] gemini: dead — 503 (demand spike)
+  [bench] orcarouter-deepseek: LIVE … orcarouter-hy3: LIVE … orcarouter-glm: LIVE
+  [!] groq failed (500); cooling down, failing over…
+  [✓] answered by orcarouter-deepseek (4113.3 ms, cost $0.00)
+  verifier score: rubric pass (seat: orcarouter-glm)
+  failovers: 1 | cost: $0.00
+```
+
+Day 2 was a live demonstration of *why* the bench exists: Groq, OpenRouter, and
+Gemini were all flapping or dead at bench time. The agent probed, skipped the
+dead seats, killed its own primary mid-run, and still finished — on three
+OrcaRouter free seats added the same morning. Bench depth is the product.
 
 ## Before/after: v1 naive → v2 backoff+verify
 
@@ -93,7 +117,9 @@ motivated the cooldown + checkpoint-restore design in v2.
   (`entire_wrap.py`) and commits its own run artifacts — every agent commit is
   a replayable checkpoint. Evidence: `evidence/entire-checkpoint-explain.txt`
   (checkpoint `01M4JBMESRM5N1J1G16DR8KE6C`), per-run transcripts in
-  `evidence/runs/<run_id>/transcript.jsonl`.
+  `evidence/runs/<run_id>/transcript.jsonl`. Day-2 checkpoints fire on agent
+  commits too: `01M4NHB9KAH8CXKECAQ6C4TMNH` (planner/verifier failover fix),
+  `01M4NHQN9EEQHM0GAYBGYGCV2A` (OrcaRouter bench expansion).
 - **cfo.ai**: business numbers exported as CSV (`business/pricing-tiers.csv`,
   `business/scenarios.csv`, `business/unit-economics.csv`), ready for upload;
   Ari forecasts land day 2.
