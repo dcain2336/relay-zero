@@ -122,9 +122,14 @@ motivated the cooldown + checkpoint-restore design in v2.
   `01M4NHQN9EEQHM0GAYBGYGCV2A` (OrcaRouter bench expansion).
 - **cfo.ai**: business numbers exported as CSV (`business/pricing-tiers.csv`,
   `business/scenarios.csv`, `business/unit-economics.csv`), ready for upload;
-  Ari forecasts land day 2.
+  Ari forecasts land once the free no-card account exists (signup in progress —
+  blocked on Cloudflare Turnstile from this network; unblock path: sign up at
+  app.cfo.ai/register from a phone). The staged plan: 100% gross margin on
+  inference ($0), break-even ≈ 35 Pro customers.
 
 ## The business (preview)
 
 RelayZero as a $0-inference agent API: inference costs $0, gross margin on
-inference is 100%, break-even ≈ 35 Pro customers. Full plan via cfo.ai (day 2).
+inference is 100%, break-even ≈ 35 Pro customers. The full staged business plan
+(pricing tiers, scenarios, unit economics) ships with the entry and feeds cfo.ai
+once the free account exists.
